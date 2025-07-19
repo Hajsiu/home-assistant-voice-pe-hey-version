@@ -1,116 +1,68 @@
-name: Build
+name: Build & Publish Voice PE
 
 on:
   push:
-    branches:
-      - dev
-  pull_request:
-  workflow_dispatch:
-  release:
-    types: [published]
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+    tags:
+      - '25.*'          # każde tagowanie 25.x.y odpala build
 
 jobs:
-  build-firmware:
-    name: Build Firmware
-    uses: esphome/workflows/.github/workflows/build.yml@2025.4.0
-    with:
-      files: |
-        home-assistant-voice.factory.yaml
-        home-assistant-voice.8mb.yaml
-      esphome-version: 2025.6.2
-      release-summary: ${{ github.event_name == 'release' && github.event.release.body || '' }}
-      release-url: ${{ github.event_name == 'release' && github.event.release.html_url || '' }}
-      release-version: ${{ github.event_name == 'release' && github.event.release.tag_name || '' }}
-
-  comment:
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'esphome/home-assistant-voice-pe'
-    name: Comment on PR
+  build:
     runs-on: ubuntu-latest
-    needs:
-      - build-firmware
+    env:
+      VERSION: ${{ github.ref_name }}       # np. 25.6.0
+      DEVICE: home-assistant-voice          # nazwa w katalogu firmware
     steps:
-      - name: Comment on PR
-        uses: actions/github-script@v7.0.1
-        with:
-          script: |-
-            const artifacts = await github.rest.actions.listWorkflowRunArtifacts({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              run_id: context.runId,
-            })
-            const artifact = artifacts['data']['artifacts'].find(a => a.name === 'home-assistant-voice')
-            const url = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}/artifacts/${artifact['id']}`
-            await github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: `Firmware built successfully! :tada:
+      - uses: actions/checkout@v4
 
-            [Download][download] and extract the firmware to install with https://web.esphome.io
+      - name: Set up Python + ESPHome
+        run: |
+          python -m pip install --upgrade pip
+          pip install esphome==2025.4.0            # konkretna wersja ESPHome
 
-            Make sure to choose \`home-assistant-voice-esp32s3.factory.bin\`.
+      - name: Compile factory & OTA
+        run: |
+          esphome compile home-assistant-voice.factory.yaml
+          esphome compile home-assistant-voice.yaml
 
-            [download]: ${url}`
-            })
+      - name: Prepare docs/ structure
+        run: |
+          mkdir -p docs/firmware/$DEVICE/$VERSION
+          cp build/$DEVICE/*.factory.bin docs/firmware/$DEVICE/$VERSION/
+          cp build/$DEVICE/*.ota.bin      docs/firmware/$DEVICE/$VERSION/
 
-  upload-to-r2:
-    if: github.event_name == 'release'
-    name: Upload to R2
-    needs:
-      - build-firmware
-    uses: esphome/workflows/.github/workflows/upload-to-r2.yml@2025.4.0
-    with:
-      directory: home-assistant-voice-pe
-    secrets: inherit
+      - name: Calculate SHA256
+        id: sha
+        run: |
+          SHA=$(sha256sum docs/firmware/$DEVICE/$VERSION/*.ota.bin | cut -d' ' -f1)
+          echo "sha=$SHA" >> $GITHUB_OUTPUT
 
-  summary:
-    if: github.event_name == 'release'
-    name: Generate Summary
-    runs-on: ubuntu-latest
-    needs:
-      - upload-to-r2
-    steps:
-      - name: Generate
-        run: |-
-          echo "## Firmware built successfully!" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "[Install here](https://esphome.github.io/home-assistant-voice-pe/?version=${{ github.event.release.tag_name }}) and test **before** approving deployment to beta or production." >> $GITHUB_STEP_SUMMARY
+      - name: Generate manifest.json
+        run: |
+          cat > docs/firmware/$DEVICE/manifest.json <<EOF
+          {
+            "name": "Home Assistant Voice PE - Hey Version",
+            "version": "${VERSION}",
+            "home_assistant_domain": "esphome",
+            "new_install_prompt_erase": false,
+            "builds": [{
+              "chipFamily": "ESP32-S3",
+              "parts": [{
+                "path": "${VERSION}/home-assistant-voice-esp32s3.factory.bin",
+                "offset": 0
+              }],
+              "ota": {
+                "path": "${VERSION}/home-assistant-voice-esp32s3.ota.bin",
+                "sha256": "${{ steps.sha.outputs.sha }}",
+                "type": "esphome"
+              }
+            }]
+          }
+          EOF
 
-  upload-to-release:
-    name: Upload to Release
-    if: github.event_name == 'release'
-    uses: esphome/workflows/.github/workflows/upload-to-gh-release.yml@2025.4.0
-    needs:
-      - build-firmware
-    with:
-      version: ${{ github.event.release.tag_name }}
-
-  promote-beta:
-    name: Promote to Beta
-    if: github.event_name == 'release'
-    uses: esphome/workflows/.github/workflows/promote-r2.yml@2025.4.0
-    needs:
-      - upload-to-r2
-    with:
-      version: ${{ github.event.release.tag_name }}
-      directory: home-assistant-voice-pe
-      channel: beta
-      manifest-filename: manifest-beta.json
-    secrets: inherit
-
-  promote-prod:
-    name: Promote to Production
-    if: github.event_name == 'release' && github.event.release.prerelease == false
-    uses: esphome/workflows/.github/workflows/promote-r2.yml@2025.4.0
-    needs:
-      - upload-to-r2
-    with:
-      version: ${{ github.event.release.tag_name }}
-      directory: home-assistant-voice-pe
-      channel: production
-      manifest-filename: manifest.json
-    secrets: inherit
+      - name: Commit pages artefacts
+        run: |
+          git config --global user.name  "github-actions"
+          git config --global user.email "actions@users.noreply.github.com"
+          git add docs/
+          git commit -m "Publish firmware ${VERSION}" || echo "No changes"
+          git push
