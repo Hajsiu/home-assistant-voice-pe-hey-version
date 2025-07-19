@@ -113,7 +113,7 @@ PipelineStages VoiceKit::read_pipeline_stage(MicrophoneChannels channel) {
 void VoiceKit::write_pipeline_stages() {
   // Write channel 0 stage
   uint8_t stage_set[] = {CONFIGURATION_SERVICER_RESID, CONFIGURATION_SERVICER_RESID_CHANNEL_0_PIPELINE_STAGE, 1,
-                               this->channel_0_stage_};
+                         this->channel_0_stage_};
 
   auto error_code = this->write(stage_set, sizeof(stage_set));
   if (error_code != i2c::ERROR_OK) {
