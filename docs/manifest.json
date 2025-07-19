@@ -1,0 +1,12 @@
+{
+  "name": "Home Assistant Voice PE (custom)",
+  "version": "25.7.0-dev",
+  "builds": [
+    {
+      "chipFamily": "ESP32-S3",
+      "parts": [
+        { "path": "voice_pe.bin", "offset": 0 }
+      ]
+    }
+  ]
+}
