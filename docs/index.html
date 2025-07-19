@@ -1,12 +1,16 @@
-<!DOCTYPE html><html><head>
-  <meta charset="utf-8"/>
-  <title>Home Assistant Voice PE – instalator</title>
-  <script type="module"
-    src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
-</head><body>
-  <h1>Home Assistant Voice PE - Hey Version</h1>
-  <p>Podłącz głośnik w trybie BOOT i kliknij:</p>
-  <esp-web-install-button manifest="firmware/home-assistant-voice/manifest.json">
-    <i slot="unsupported">(Użyj Chrome/Edge na desktopie)</i>
-  </esp-web-install-button>
-</body></html>
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Home Assistant Voice PE - Web Installer</title>
+    <!-- ESP Web Tools script -->
+    <script type="module"
+            src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module">
+    </script>
+  </head>
+  <body style="font-family:sans-serif">
+    <h1>Flash Home Assistant Voice PE</h1>
+    <!-- Button flashes whatever is described in manifest.json -->
+    <esp-web-install-button manifest="manifest.json"></esp-web-install-button>
+  </body>
+</html>
